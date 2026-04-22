@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# Environment
+.env
+
+# Data outputs
+data/processed/*.csv
+data/processed/*.json
+data/processed/*.md
+data/processed/*.pdf
+
+# Streamlit cache
+.streamlit/
