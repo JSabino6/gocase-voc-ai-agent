@@ -10,36 +10,41 @@ from groq import Groq
 from src.config import DATA_PROCESSED_DIR, get_settings
 from src.pipeline.fallback_rules import analyze_feedback_with_rules
 
-SYSTEM_PROMPT = (
-    """Você é um Analista Sênior de Customer Experience (CX) e Engenharia de Qualidade trabalhando INTERNAMENTE na Gocase. Sua missão é ler as reclamações dos clientes e definir o plano de ação, seguindo ESTRITAMENTE as Políticas Oficiais, Termos de Uso e Manuais de Garantia da Gocase.
+SYSTEM_PROMPT = """
+Voce e um Analista Senior de Customer Experience (CX) e Engenharia de Qualidade trabalhando internamente na Gocase.
+Sua missao e classificar reclamacoes e orientar a equipe interna com plano de acao objetivo.
 
-📋 POLÍTICAS GLOBAIS DE RESOLUÇÃO GOCASE (BASE DE CONHECIMENTO OFICIAL):
+POLITICAS GLOBAIS (RESUMO):
+1) Arrependimento e cancelamento:
+- Produtos personalizados em producao nao podem ser cancelados.
+- Produtos clear podem ser cancelados se nao recebidos.
+- Arrependimento: 7 dias corridos apos recebimento.
+- Reembolso/vale somente apos postagem e comprovante da logistica reversa.
 
-[1. ARREPENDIMENTO E CANCELAMENTO (CDC)]
-- Regra de Personalizados: A Gocase produz itens sob demanda e exclusivos. Produtos em produção não podem ser cancelados, pois não retornam ao estoque.
-- Regra de Produtos "Clear" (Sem estampa): Podem ser cancelados sem atrito se ainda não foram recebidos.
-- Prazo de Arrependimento: 7 dias corridos após o recebimento.
-- Ação Padrão: O reembolso ou vale-compras só deve ser liberado APÓS o cliente postar o produto na agência dos Correios com o código de logística reversa e enviar o comprovante.
+2) Reembolso:
+- Mesma forma de pagamento.
+- Pix/boleto apenas para conta do titular da compra.
+- Promocao: estorno sobre valor efetivamente pago.
 
-[2. DEVOLUÇÃO FINANCEIRA (REGRAS DE REEMBOLSO)]
-- Regra Base: O reembolso será feito na mesma forma de pagamento.
-- Pix/Boleto: O estorno será via depósito bancário e, sob nenhuma hipótese, será feito em conta de terceiros (apenas na conta do titular da compra).
-- Produtos em Promoção: O valor estornado será exatamente o valor pago no momento da compra promocional, e não o valor original "cheio" do produto.
+3) Garantia e avarias:
+- Solicitar retorno do produto com embalagem/acessorios para analise.
+- Borracha de vedacao de garrafa termica: orientar protocolo no WhatsApp para reposicao com frete de R$ 15,00.
+- Garantia malas: Trip/Voyage (6 meses descascamento, 3 meses demais); Bold (3 meses geral).
 
-[3. GARANTIAS E AVARIAS (PRODUTOS COM DEFEITO)]
-- Regra Base: Exigir o retorno do produto na embalagem original, com todos os acessórios e tags, para análise e melhoria dos processos de fabricação na fábrica.
-- Peças de Reposição Específicas: Se o problema for a perda da borracha de vedação da garrafa térmica, a ação NÃO é trocar a garrafa. A ação é orientar o cliente a abrir um protocolo no WhatsApp para o envio de uma nova borracha mediante o pagamento do frete de R$ 15,00.
-- Garantia de Malas: Modelos Trip e Voyage (6 meses contra descascamento, 3 meses outros defeitos). Modelo Bold (3 meses geral).
+4) Atendimento e logistica:
+- Nao culpar cliente por falha de transportadora ou demora de atendimento.
+- Priorizar contato, acareacao com transportadora e reenvio expresso quando aplicavel.
 
-[4. ATENDIMENTO E LOGÍSTICA]
-- Regra Base: Se a transportadora falhar ou o sistema de atendimento demorar, a culpa nunca deve ser repassada ao cliente.
-- Ação Padrão: Recomendar prioridade no contato, acareação com a transportadora e, se necessário, reenvio expresso do produto.
-
-🚨 DIRETRIZES ESTRITAS DE COMPORTAMENTO:
-1. Você trabalha para a Gocase. NUNCA concorde com ofensas à empresa ou diga que o serviço é ruim.
-2. NUNCA escreva conselhos morais para o cliente (ex: "pesquise melhor", "leia as regras"). O seu texto é um memorando INTERNO para os gerentes da Gocase lerem e agirem.
-3. Baseie sua decisão ESTRITAMENTE na política oficial que mais se adequa ao relato."""
-)
+DIRETRIZES:
+- Nao responder com julgamento moral.
+- Gerar duas saidas:
+  recomendacao_interna_gocase: plano de acao interno.
+  resposta_sugerida_cliente: GUIA INTERNO para o atendente (nao resposta final ao cliente).
+- O campo resposta_sugerida_cliente deve conter 3 blocos:
+  1) Guia para atendente
+  2) Checklist do atendimento
+  3) Texto-base editavel (personalizar antes de enviar)
+""".strip()
 
 USER_PROMPT_TEMPLATE = """
 Analise o feedback abaixo em portugues e retorne APENAS um JSON valido.
@@ -49,7 +54,16 @@ Campos obrigatorios:
 - tema_principal: entrega | qualidade_produto | preco_frete | atendimento | portfolio_personalizacao | outros
 - prioridade: inteiro de 1 a 5
 - recomendacao_interna_gocase: recomendacao objetiva e acionavel para os times internos da Gocase
+- resposta_sugerida_cliente: guia interno para o atendente do SAC (nao escrever resposta final direta ao cliente)
 
+Regras para resposta_sugerida_cliente:
+- Nao iniciar com "Ola", "Prezado cliente", etc.
+- Trazer os 3 blocos:
+  1) Guia para atendente
+  2) Checklist do atendimento
+  3) Texto-base editavel (personalizar antes de enviar)
+- Citar a dor especifica do caso e proximo passo concreto.
+- Incluir referencia de protocolo/pedido quando houver no relato; se nao houver, usar [informar].
 
 Campos opcionais:
 - urgencia: baixa | media | alta | critica
@@ -78,8 +92,261 @@ def _to_bool(value: Any) -> bool:
         return value
     if isinstance(value, (int, float)):
         return bool(value)
-    normalized = str(value).strip().lower()
-    return normalized in {"1", "true", "t", "sim", "yes", "y"}
+    return str(value).strip().lower() in {"1", "true", "t", "sim", "yes", "y"}
+
+
+def _normalize_author_name(author: str) -> str:
+    cleaned = str(author or "").strip()
+    if not cleaned:
+        return ""
+
+    lowered = cleaned.lower()
+    generic_values = {
+        "consumidor",
+        "consumidor ra",
+        "cliente",
+        "anonimo",
+        "anônimo",
+        "nao informado",
+        "não informado",
+    }
+    if lowered in generic_values or lowered.startswith("consumidor"):
+        return ""
+    return cleaned
+
+
+def _extract_case_reference(feedback_text: str) -> str:
+    match = re.search(
+        r"\b(protocolo|pedido|id)\b\s*(?:numero|n[º°o\.]|#)?\s*[:#-]?\s*([A-Za-z0-9*._\-/]{3,})",
+        feedback_text,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return "protocolo/pedido [informar]"
+
+    label = match.group(1).lower()
+    value = match.group(2).strip(".,;:)")
+    if not re.search(r"[0-9*]", value):
+        return "protocolo/pedido [informar]"
+    if label == "id":
+        return f"ID {value}"
+    return f"{label} {value}"
+
+
+def _issue_summary(theme: str, feedback_text: str) -> str:
+    lower = feedback_text.lower()
+    if "cupom" in lower:
+        return "dificuldade com cupom e finalizacao da compra"
+    if "nao recebi" in lower or "não recebi" in lower:
+        return "divergencia de entrega e nao recebimento do pedido"
+    if "reembolso" in lower or "estorno" in lower:
+        return "solicitacao de reembolso"
+    if "troca" in lower and "recus" in lower:
+        return "recusa de troca no atendimento"
+
+    by_theme = {
+        "entrega": "atraso ou problema de entrega",
+        "qualidade_produto": "defeito ou avaria de produto",
+        "preco_frete": "divergencia de preco/frete/promocao",
+        "atendimento": "dificuldade de atendimento e retorno",
+        "portfolio_personalizacao": "expectativa sobre personalizacao/modelo",
+        "outros": "transtorno relatado pelo cliente",
+    }
+    return by_theme.get(theme, by_theme["outros"])
+
+
+def _next_step_summary(theme: str, feedback_text: str) -> str:
+    lower = feedback_text.lower()
+    if "cupom" in lower:
+        return "validar regra promocional com time comercial e retornar alternativa aplicavel"
+    if "reembolso" in lower or "estorno" in lower:
+        return "confirmar tratativa financeira na mesma forma de pagamento"
+
+    by_theme = {
+        "entrega": "fazer acareacao com transportadora e definir novo prazo ou reenvio",
+        "qualidade_produto": "abrir tratativa de qualidade para troca/reembolso conforme politica",
+        "preco_frete": "revisar condicoes comerciais aplicadas ao pedido",
+        "atendimento": "priorizar retorno humano com orientacao clara",
+        "portfolio_personalizacao": "revisar fluxo de personalizacao e opcao de ajuste/troca",
+        "outros": "fazer triagem com time responsavel e registrar plano de resolucao",
+    }
+    return by_theme.get(theme, by_theme["outros"])
+
+
+def _is_generic_customer_response(customer_response: str) -> bool:
+    normalized = " ".join(str(customer_response).lower().split())
+    if not normalized or len(normalized) < 120:
+        return True
+
+    generic_markers = [
+        "sentimos muito pelo transtorno",
+        "seguimos a disposicao",
+        "retornaremos por este canal",
+    ]
+    specific_markers = [
+        "protocolo",
+        "pedido",
+        "reembolso",
+        "troca",
+        "transportadora",
+        "garantia",
+        "cupom",
+        "prazo",
+        "devolucao",
+        "estorno",
+        "checklist",
+        "guia para atendente",
+    ]
+
+    generic_hits = sum(marker in normalized for marker in generic_markers)
+    specific_hits = sum(marker in normalized for marker in specific_markers)
+    return generic_hits >= 2 and specific_hits == 0
+
+
+def _build_customer_text_base(
+    sentiment_label: str,
+    issue: str,
+    case_reference: str,
+    next_step: str,
+    urgency: str,
+    author: str,
+) -> str:
+    customer_name = _normalize_author_name(author)
+    greeting = f"Ola, {customer_name}" if customer_name else "Ola"
+    priority_phrase = "com prioridade maxima" if urgency in {"alta", "critica"} else "com prioridade"
+
+    if sentiment_label == "positivo":
+        return (
+            f"{greeting}! Obrigado por compartilhar sua experiencia positiva com a Gocase. "
+            "Seu feedback foi registrado internamente para reforcarmos os pontos fortes do atendimento e do produto. "
+            "Se precisar de qualquer suporte adicional, seguimos a disposicao."
+        )
+
+    return (
+        f"{greeting}! Sinto muito pelo ocorrido e entendo sua insatisfacao com {issue}. "
+        f"Referente ao seu {case_reference}, sua tratativa foi registrada {priority_phrase}. "
+        f"Nosso proximo passo e {next_step}. "
+        "Assim que tivermos atualizacao, retornaremos por este canal com os proximos passos."
+    )
+
+
+def _default_customer_response(
+    theme: str,
+    sentiment_label: str,
+    urgency: str = "media",
+    feedback_text: str = "",
+    author: str = "",
+    recommendation: str = "",
+) -> str:
+    issue = _issue_summary(theme, feedback_text)
+    next_step = _next_step_summary(theme, feedback_text)
+    case_reference = _extract_case_reference(feedback_text)
+    sla = "ate 4 horas" if urgency in {"alta", "critica"} else "ate 1 dia util"
+
+    recommendation_line = recommendation.strip() if recommendation else "Validar tratamento com o time responsavel."
+    text_base = _build_customer_text_base(
+        sentiment_label=sentiment_label,
+        issue=issue,
+        case_reference=case_reference,
+        next_step=next_step,
+        urgency=urgency,
+        author=author,
+    )
+
+    return (
+        "Guia para atendente (uso interno):\n"
+        f"- Dor principal a reconhecer: {issue}.\n"
+        f"- Caso para conferir no CRM: {case_reference}.\n"
+        f"- Acao interna obrigatoria: {recommendation_line}.\n"
+        f"- Proximo passo para comunicar: {next_step}.\n\n"
+        "Checklist do atendimento:\n"
+        "1. Validar dados do pedido/protocolo e status atual da tratativa.\n"
+        "2. Confirmar politica aplicavel ao caso (troca, reembolso, garantia, logistica).\n"
+        f"3. Informar prazo de retorno ao cliente: {sla}.\n"
+        "4. Registrar no historico o compromisso assumido na resposta.\n\n"
+        "Texto-base editavel (personalizar antes de enviar):\n"
+        f"\"{text_base}\""
+    )
+
+
+def _looks_customer_facing(text: str) -> bool:
+    normalized = str(text or "").strip().lower()
+    if not normalized:
+        return False
+
+    direct_openers = [
+        "ola",
+        "olá",
+        "prezado",
+        "prezada",
+        "sentimos",
+        "sinto muito",
+        "lamentamos",
+    ]
+
+    starts_direct = any(normalized.startswith(opener) for opener in direct_openers)
+    has_internal_labels = all(
+        marker in normalized
+        for marker in ["guia para atendente", "checklist", "texto-base editavel"]
+    )
+    return starts_direct and not has_internal_labels
+
+
+def _ensure_employee_guidance(
+    response_text: str,
+    theme: str,
+    sentiment_label: str,
+    urgency: str,
+    feedback_text: str,
+    author: str,
+    recommendation: str,
+) -> str:
+    normalized = str(response_text or "").strip()
+    if not normalized:
+        return _default_customer_response(
+            theme=theme,
+            sentiment_label=sentiment_label,
+            urgency=urgency,
+            feedback_text=feedback_text,
+            author=author,
+            recommendation=recommendation,
+        )
+
+    lowered = normalized.lower()
+    has_internal_shape = all(
+        marker in lowered
+        for marker in ["guia para atendente", "checklist", "texto-base"]
+    )
+    if has_internal_shape:
+        return normalized
+
+    if _looks_customer_facing(normalized) or _is_generic_customer_response(normalized):
+        return _default_customer_response(
+            theme=theme,
+            sentiment_label=sentiment_label,
+            urgency=urgency,
+            feedback_text=feedback_text,
+            author=author,
+            recommendation=recommendation,
+        )
+
+    # Se nao estiver no formato padrao, encapsula o conteudo como guia interno.
+    issue = _issue_summary(theme, feedback_text)
+    case_reference = _extract_case_reference(feedback_text)
+    next_step = _next_step_summary(theme, feedback_text)
+    return (
+        "Guia para atendente (uso interno):\n"
+        f"- Dor principal a reconhecer: {issue}.\n"
+        f"- Caso para conferir no CRM: {case_reference}.\n"
+        f"- Proximo passo para comunicar: {next_step}.\n\n"
+        "Checklist do atendimento:\n"
+        "1. Validar numero do pedido/protocolo e status no sistema.\n"
+        "2. Confirmar politica aplicavel antes de responder.\n"
+        "3. Informar prazo e dono da tratativa.\n"
+        "4. Registrar historico da acao.\n\n"
+        "Texto-base editavel (personalizar antes de enviar):\n"
+        f"\"{normalized}\""
+    )
 
 
 def _attach_corporate_aliases(payload: dict[str, Any]) -> dict[str, Any]:
@@ -94,10 +361,32 @@ def _attach_corporate_aliases(payload: dict[str, Any]) -> dict[str, Any]:
     payload["actionable_recommendation"] = recommendation
     payload["recomendacao_interna_gocase"] = recommendation
 
-    sentiment = str(payload.get("sentiment_label", "neutro")).strip().lower()
-    theme = str(payload.get("primary_theme", "outros")).strip().lower()
-    priority_value = payload.get("priority", 3)
+    customer_response = str(
+        payload.get("resposta_sugerida_cliente")
+        or payload.get("suggested_customer_response")
+        or ""
+    ).strip()
 
+    theme = str(payload.get("primary_theme", "outros")).strip().lower()
+    sentiment = str(payload.get("sentiment_label", "neutro")).strip().lower()
+    urgency = str(payload.get("urgency", "media")).strip().lower()
+    feedback_text = str(payload.get("raw_text", "") or "")
+    author = str(payload.get("author", "") or "")
+
+    customer_response = _ensure_employee_guidance(
+        response_text=customer_response,
+        theme=theme,
+        sentiment_label=sentiment,
+        urgency=urgency,
+        feedback_text=feedback_text,
+        author=author,
+        recommendation=recommendation,
+    )
+
+    payload["resposta_sugerida_cliente"] = customer_response
+    payload["suggested_customer_response"] = customer_response
+
+    priority_value = payload.get("priority", 3)
     try:
         priority = int(priority_value)
     except (TypeError, ValueError):
@@ -106,6 +395,7 @@ def _attach_corporate_aliases(payload: dict[str, Any]) -> dict[str, Any]:
     payload["sentimento"] = sentiment
     payload["tema_principal"] = theme
     payload["prioridade"] = max(1, min(5, priority))
+    payload["guia_resposta_atendente"] = customer_response
     return payload
 
 
@@ -120,13 +410,17 @@ def _extract_json_block(content: str) -> dict[str, Any]:
     return json.loads(match.group(0))
 
 
-def _sanitize_model_output(payload: dict[str, Any]) -> dict[str, Any]:
+def _sanitize_model_output(
+    payload: dict[str, Any],
+    feedback_text: str = "",
+    author: str = "",
+) -> dict[str, Any]:
     sentiment_label = str(payload.get("sentiment_label", payload.get("sentimento", "neutro"))).strip().lower()
     primary_theme = str(payload.get("primary_theme", payload.get("tema_principal", "outros"))).strip().lower()
 
-    priority = payload.get("priority", payload.get("prioridade", 3))
+    priority_value = payload.get("priority", payload.get("prioridade", 3))
     try:
-        priority = int(priority)
+        priority = int(priority_value)
     except (TypeError, ValueError):
         priority = 3
 
@@ -148,15 +442,15 @@ def _sanitize_model_output(payload: dict[str, Any]) -> dict[str, Any]:
     if urgency not in ALLOWED_URGENCY:
         urgency = "media"
 
-    sentiment_score = payload.get("sentiment_score", payload.get("score_sentimento", 0))
+    sentiment_score_value = payload.get("sentiment_score", payload.get("score_sentimento", 0))
     try:
-        sentiment_score = float(sentiment_score)
+        sentiment_score = float(sentiment_score_value)
     except (TypeError, ValueError):
         sentiment_score = 0.0
 
-    confidence = payload.get("confidence", payload.get("confianca", 0.7))
+    confidence_value = payload.get("confidence", payload.get("confianca", 0.7))
     try:
-        confidence = float(confidence)
+        confidence = float(confidence_value)
     except (TypeError, ValueError):
         confidence = 0.7
 
@@ -168,9 +462,23 @@ def _sanitize_model_output(payload: dict[str, Any]) -> dict[str, Any]:
     if not recommendation:
         recommendation = "Revisar caso manualmente."
 
-    escalation_required = _to_bool(
-        payload.get("escalation_required", payload.get("escalonamento_necessario", False))
+    customer_response = str(
+        payload.get("resposta_sugerida_cliente")
+        or payload.get("suggested_customer_response")
+        or ""
+    ).strip()
+
+    customer_response = _ensure_employee_guidance(
+        response_text=customer_response,
+        theme=primary_theme,
+        sentiment_label=sentiment_label,
+        urgency=urgency,
+        feedback_text=feedback_text,
+        author=author,
+        recommendation=recommendation,
     )
+
+    escalation_required = _to_bool(payload.get("escalation_required", payload.get("escalonamento_necessario", False)))
 
     normalized = {
         "sentiment_label": sentiment_label,
@@ -179,17 +487,36 @@ def _sanitize_model_output(payload: dict[str, Any]) -> dict[str, Any]:
         "urgency": urgency,
         "priority": max(1, min(5, priority)),
         "actionable_recommendation": recommendation,
+        "resposta_sugerida_cliente": customer_response,
         "escalation_required": escalation_required,
         "confidence": max(0.0, min(1.0, confidence)),
+        "raw_text": feedback_text,
+        "author": author,
     }
     return _attach_corporate_aliases(normalized)
 
 
-def analyze_feedback_with_groq(text: str, client: Groq | None = None) -> dict[str, Any]:
+def analyze_feedback_with_groq(
+    text: str,
+    client: Groq | None = None,
+    author: str = "",
+) -> dict[str, Any]:
     settings = get_settings()
+
     if not settings.groq_api_key:
         fallback = analyze_feedback_with_rules(text)
+        fallback["raw_text"] = text
+        fallback["author"] = author
         fallback = _attach_corporate_aliases(fallback)
+        fallback["resposta_sugerida_cliente"] = _ensure_employee_guidance(
+            response_text=str(fallback.get("resposta_sugerida_cliente", "")),
+            theme=str(fallback.get("primary_theme", "outros")),
+            sentiment_label=str(fallback.get("sentiment_label", "neutro")),
+            urgency=str(fallback.get("urgency", "media")),
+            feedback_text=text,
+            author=author,
+            recommendation=str(fallback.get("actionable_recommendation", "")),
+        )
         fallback["analysis_notes"] = "GROQ_API_KEY ausente. Fallback de regras aplicado."
         return fallback
 
@@ -199,7 +526,7 @@ def analyze_feedback_with_groq(text: str, client: Groq | None = None) -> dict[st
         completion = local_client.chat.completions.create(
             model=settings.groq_model,
             temperature=0.2,
-            max_tokens=350,
+            max_tokens=700,
             response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -209,14 +536,25 @@ def analyze_feedback_with_groq(text: str, client: Groq | None = None) -> dict[st
 
         content = completion.choices[0].message.content or "{}"
         payload = _extract_json_block(content)
-        normalized = _sanitize_model_output(payload)
+        normalized = _sanitize_model_output(payload, feedback_text=text, author=author)
         normalized["ai_provider"] = "groq"
         normalized["model_used"] = settings.groq_model
         normalized["analysis_notes"] = "Analisado com Groq"
         return normalized
     except Exception as exc:
         fallback = analyze_feedback_with_rules(text)
+        fallback["raw_text"] = text
+        fallback["author"] = author
         fallback = _attach_corporate_aliases(fallback)
+        fallback["resposta_sugerida_cliente"] = _ensure_employee_guidance(
+            response_text=str(fallback.get("resposta_sugerida_cliente", "")),
+            theme=str(fallback.get("primary_theme", "outros")),
+            sentiment_label=str(fallback.get("sentiment_label", "neutro")),
+            urgency=str(fallback.get("urgency", "media")),
+            feedback_text=text,
+            author=author,
+            recommendation=str(fallback.get("actionable_recommendation", "")),
+        )
         fallback["analysis_notes"] = f"Fallback aplicado por erro Groq: {exc}"
         return fallback
 
@@ -231,6 +569,8 @@ def enrich_feedback_dataframe(df: pd.DataFrame) -> pd.DataFrame:
             "priority",
             "actionable_recommendation",
             "recomendacao_interna_gocase",
+            "resposta_sugerida_cliente",
+            "guia_resposta_atendente",
             "sentimento",
             "tema_principal",
             "prioridade",
@@ -240,8 +580,8 @@ def enrich_feedback_dataframe(df: pd.DataFrame) -> pd.DataFrame:
             "confidence",
             "analysis_notes",
         ]
-        for col in expected:
-            df[col] = []
+        for column in expected:
+            df[column] = []
         return df
 
     settings = get_settings()
@@ -249,13 +589,16 @@ def enrich_feedback_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     enriched_rows: list[dict[str, Any]] = []
     for _, row in df.iterrows():
-        result = analyze_feedback_with_groq(str(row.get("raw_text", "")), client=client)
+        result = analyze_feedback_with_groq(
+            str(row.get("raw_text", "")),
+            client=client,
+            author=str(row.get("author", "")),
+        )
         merged = row.to_dict()
         merged.update(result)
         enriched_rows.append(merged)
 
-    enriched = pd.DataFrame(enriched_rows)
-    return enriched
+    return pd.DataFrame(enriched_rows)
 
 
 def save_analyzed_feedback(df: pd.DataFrame, output_path: str | None = None) -> str:

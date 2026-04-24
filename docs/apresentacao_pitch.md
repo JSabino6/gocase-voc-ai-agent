@@ -9,10 +9,10 @@
 - Dificuldade de priorizar o que realmente impacta cliente
 
 ## 3. Solucao proposta (60s)
-- Coleta feedback de Ebit e Reclame Aqui (MVP)
+- Coleta feedback do Reclame Aqui (automatico + fallback manual)
 - Normaliza dados
 - Usa IA (Groq) para classificar sentimento, tema e prioridade
-- Gera recomendacao automatica de acao
+- Gera recomendacao automatica de acao e guia interno para o atendente (copiloto, nao resposta automatica cega)
 - Entrega dashboard e relatorio executivo
 
 ## 4. Demo tecnica (90s)

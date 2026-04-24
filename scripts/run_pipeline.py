@@ -9,21 +9,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.collectors.ebit_collector import collect_and_save_ebit_reviews
 from src.collectors.reclameaqui_collector import collect_reclameaqui_complaints
 from src.collectors.ra_manual_loader import load_reclameaqui_manual, upsert_reclameaqui_feedback
-from src.config import DATA_PROCESSED_DIR, ensure_project_dirs
+from src.config import ensure_project_dirs
 from src.pipeline.analyze_with_groq import enrich_feedback_dataframe, save_analyzed_feedback
 from src.pipeline.normalize_feedback import normalize_feedback_frames, save_normalized_feedback
 from src.reporting.build_report import build_reports
-
-
-def _safe_collect_ebit() -> pd.DataFrame:
-    try:
-        return collect_and_save_ebit_reviews()
-    except Exception as exc:
-        print(f"[WARN] Ebit collection failed: {exc}")
-        return pd.DataFrame()
 
 
 def _safe_collect_ra() -> pd.DataFrame:
@@ -62,10 +53,9 @@ def _safe_collect_ra() -> pd.DataFrame:
 def run_pipeline() -> dict[str, str]:
     ensure_project_dirs()
 
-    ebit_df = _safe_collect_ebit()
     ra_df = _safe_collect_ra()
 
-    normalized_df = normalize_feedback_frames([ebit_df, ra_df])
+    normalized_df = normalize_feedback_frames([ra_df])
     normalized_path = save_normalized_feedback(normalized_df)
 
     analyzed_df = enrich_feedback_dataframe(normalized_df)
@@ -79,7 +69,6 @@ def run_pipeline() -> dict[str, str]:
         "markdown_report": str(markdown_report),
         "pdf_report": str(pdf_report),
         "rows_collected": str(len(normalized_df)),
-        "rows_ebit": str(len(ebit_df)),
         "rows_reclameaqui": str(len(ra_df)),
     }
 

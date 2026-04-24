@@ -7,11 +7,16 @@ Times de CX, Produto e Operacoes perdem muito tempo lendo feedback manualmente e
 
 ## Solucao
 Um agente IA que:
-1. Coleta feedback publico (Ebit) e carrega feedback manual (Reclame Aqui).
+1. Coleta reclamacoes do Reclame Aqui (automatico + fallback manual em CSV).
 2. Normaliza os dados em um formato unico.
-3. Analisa cada feedback com Groq (ou fallback por regras).
+3. Analisa cada feedback com Groq (ou fallback por regras), gerando recomendacao interna e guia de resposta para o atendente.
 4. Gera relatorio executivo com pontos positivos, criticas e acoes prioritarias.
 5. Exibe dashboard para acompanhamento rapido.
+
+## Campos gerados pela IA
+No arquivo `data/processed/analyzed_feedback.csv`, cada feedback passa a ter dois campos de saida principais para operacao:
+- `recomendacao_interna_gocase`: orientacao acionavel para o time interno (produto, logistica, CX, qualidade).
+- `resposta_sugerida_cliente`: guia interno para o analista do SAC montar resposta profissional no Reclame Aqui (com checklist e texto-base editavel).
 
 ## Arquitetura (MVP)
 - Coleta: src/collectors
@@ -34,7 +39,7 @@ copy .env.example .env
 ```
 Preencha no `.env`:
 - GROQ_API_KEY
-- GROQ_MODEL (opcional)
+- GROQ_MODEL llama-3.3-70b-versatile 
 - REQUEST_TIMEOUT_SECONDS (opcional)
 
 ### 3) Rodar pipeline completo
@@ -64,7 +69,6 @@ Ao clicar no botao:
 
 ### Como funciona a coleta automatica
 - Reclame Aqui: tenta coletar diretamente de `https://www.reclameaqui.com.br/empresa/go-case/lista-reclamacoes/` e paginas de detalhe.
-- Ebit: tenta coleta automatica; se nao encontrar reviews no HTML, usa fallback para `data/raw/ebit_manual_seed.csv`.
 - Fallback recomendando: `Automatica + Manual (fallback)` para evitar tela sem dados quando houver bloqueio temporario de scraping.
 
 ## Enviar PDF por e-mail
@@ -83,10 +87,8 @@ Depois, no painel, informe um ou mais destinatarios (separados por virgula) e cl
 ## Entradas e saidas
 ### Entrada
 - data/raw/reclameaqui_manual_template.csv (editavel)
-- data/raw/ebit_manual_seed.csv (fallback quando o Ebit estiver renderizando via JavaScript)
 
 ### Saida
-- data/raw/ebit_feedback.csv
 - data/raw/reclameaqui_feedback.csv
 - data/processed/normalized_feedback.csv
 - data/processed/analyzed_feedback.csv
@@ -97,9 +99,6 @@ Depois, no painel, informe um ou mais destinatarios (separados por virgula) e cl
 - Uso de dados publicos para fins de demonstracao tecnica.
 - Nao republicar dados pessoais sensiveis.
 - Em producao, substituir coleta manual por integracoes oficiais.
-
-## Nota tecnica sobre o Ebit
-O site do Ebit pode retornar apenas o shell do frontend (SPA) em requisicoes HTTP simples. Quando isso acontece, o pipeline aplica fallback automatico para `data/raw/ebit_manual_seed.csv`, mantendo a demo estavel.
 
 ## Estrutura
 ```text

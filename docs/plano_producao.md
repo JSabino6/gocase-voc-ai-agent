@@ -75,6 +75,9 @@ Entregas:
 5. Baixa adocao interna
 - Mitigacao: dashboard simples, onboarding rapido e ownership por area
 
+6. Resposta automatica inadequada ao cliente
+- Mitigacao: manter IA como copiloto interno (guia para atendente) com validacao humana obrigatoria antes do envio final
+
 ## 6. KPIs de sucesso
 - Tempo de analise manual reduzido (horas/semana)
 - SLA de insight (tempo entre entrada e relatorio)

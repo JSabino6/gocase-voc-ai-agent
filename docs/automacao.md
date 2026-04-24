@@ -16,18 +16,12 @@ Automatizar o ciclo:
 5. Entrega de relatorio executivo e dashboard
 
 ## 3. Fontes de dados no MVP
-### 3.1 Ebit (automatico)
-- Tipo: avaliacoes publicas
-- Metodo: parser HTML
-- Valor: massa de comentarios com elogios e criticas
-- Observacao tecnica: quando o Ebit retorna apenas frontend SPA em HTML estatico, o sistema usa fallback para `data/raw/ebit_manual_seed.csv`.
-
-### 3.2 Reclame Aqui (manual estruturado)
+### 3.1 Reclame Aqui (manual estruturado)
 - Tipo: reclamacoes e status
 - Metodo: template CSV preenchido manualmente
 - Valor: contexto atual e mais critico para operacao
 
-### 3.3 Reclame Aqui (automatico paginado)
+### 3.2 Reclame Aqui (automatico paginado)
 - Tipo: reclamacoes publicas
 - Metodo: crawler com navegacao por paginas (`?pagina=1..N`) para evitar limite de 5 itens da primeira pagina
 - Valor: extracao recorrente com maior volume
@@ -35,7 +29,7 @@ Automatizar o ciclo:
 
 ## 4. Arquitetura tecnica
 ### 4.1 Coleta
-- src/collectors/ebit_collector.py
+- src/collectors/reclameaqui_collector.py
 - src/collectors/ra_manual_loader.py
 
 ### 4.2 Normalizacao
@@ -62,6 +56,8 @@ Campos gerados:
 - urgency
 - priority (1-5)
 - actionable_recommendation
+- recomendacao_interna_gocase
+- resposta_sugerida_cliente (guia interno para atendente, nao resposta final automatica)
 - escalation_required
 - ai_provider
 - model_used
@@ -105,8 +101,6 @@ Beneficio:
 - Relatorio padrao semanal com foco em acao
 
 ## 8. Limitacoes do MVP
-- Ebit possui historico mais antigo
-- Ebit pode exigir renderizacao JS para exibir reviews em tempo real
 - Reclame Aqui esta em carga manual no MVP
 - Taxonomia inicial simples (fase 1)
 
