@@ -77,6 +77,3 @@
 4. Adocao baixa pelo time
 - Mitigacao: painel simples, treinamento rapido e feedback loop com SAC.
 
-## 7. Narrativa para entrevista
-- "Nao quis automatizar resposta ao cliente sem controle; transformei o agente em copiloto do atendente."
-- "Assim, ganho velocidade sem perder qualidade, governanca e responsabilidade humana na etapa final."
