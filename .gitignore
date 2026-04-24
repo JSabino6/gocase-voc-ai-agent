@@ -1,4 +1,4 @@
-# Python
+#Python
 __pycache__/
 *.py[cod]
 *.pyo
@@ -6,14 +6,14 @@ __pycache__/
 .venv/
 venv/
 
-# Environment
+
 .env
 
-# Data outputs
+#outputs
 data/processed/*.csv
 data/processed/*.json
 data/processed/*.md
 data/processed/*.pdf
 
-# Streamlit cache
+#Streamlit cache
 .streamlit/
