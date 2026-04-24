@@ -2,6 +2,8 @@
 
 Projeto de automacao com IA para transformar feedback de clientes em relatorios acionaveis para negocio.
 
+Video explicativo: https://youtu.be/bwer3-99_m4
+
 ## Problema de negocio
 Times de CX, Produto e Operacoes perdem muito tempo lendo feedback manualmente em canais diferentes.
 
